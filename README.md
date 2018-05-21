@@ -1,2 +1,1 @@
-# CSE293_NLP
-Word Translation Without Parallel Data and Improvements
+# Word Translation Without Parallel Data and Improvements
