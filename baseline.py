@@ -52,6 +52,8 @@ def load_pretrained_embeddings(filepath):
     embeddings = np.concatenate(vectors_lang, 0)
     return word_to_id_lang,id_to_word_lang,embeddings
 
+src_word_to_id,src_id_to_word,src_embeddings = load_pretrained_embeddings(source_text_file)
+target_word_to_id,target_id_to_word,target_embeddings = load_pretrained_embeddings(target_text_file)
 
 src_embedding_learnable = nn.Embedding(len(src_word_to_id),dimension).cuda()
 src_embedding_learnable.weight = nn.Parameter(torch.from_numpy(src_embeddings).float())
