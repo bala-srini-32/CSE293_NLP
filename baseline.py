@@ -56,9 +56,9 @@ def load_pretrained_embeddings(filepath):
 
 src_word_to_id,src_id_to_word,src_embeddings = load_pretrained_embeddings(source_text_file)
 target_word_to_id,target_id_to_word,target_embeddings = load_pretrained_embeddings(target_text_file)
-src_embedding_learnable = nn.Embedding(len(src_word_to_id),dimension)
+src_embedding_learnable = nn.Embedding(len(src_word_to_id),dimension).cuda()
 src_embedding_learnable.weight = nn.Parameter(torch.from_numpy(src_embeddings).float())
-target_embedding_learnable = nn.Embedding(len(target_word_to_id),dimension)
+target_embedding_learnable = nn.Embedding(len(target_word_to_id),dimension).cuda()
 target_embedding_learnable.weight = nn.Parameter(torch.from_numpy(target_embeddings).float())
 
 
@@ -66,34 +66,34 @@ target_embedding_learnable.weight = nn.Parameter(torch.from_numpy(target_embeddi
 class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator,self).__init__()
-        self.linear1 = nn.Linear(300,2048)
-        self.linear2 = nn.Linear(2048,2048)
-        self.linear3 = nn.Linear(2048,1)
+        self.linear1 = nn.Linear(300,2048).cuda()
+        self.linear2 = nn.Linear(2048,2048).cuda()
+        self.linear3 = nn.Linear(2048,1).cuda()
         
     def forward(self,x):
-        x = self.linear1(F.dropout(x,p=0.1))
-        x = self.linear2(F.leaky_relu(x,negative_slope=0.2))
-        x = self.linear3(F.leaky_relu(x,negative_slope=0.2))
-        x = F.sigmoid(x)
+        x = self.linear1(F.dropout(x,p=0.1)).cuda()
+        x = self.linear2(F.leaky_relu(x,negative_slope=0.2)).cuda()
+        x = self.linear3(F.leaky_relu(x,negative_slope=0.2)).cuda()
+        x = F.sigmoid(x).cuda()
         return x.view(-1)
     
 class Mapper(nn.Module):
     def __init__(self):
         super(Mapper,self).__init__()
-        self.linear1 = nn.Linear(300,300)
+        self.linear1 = nn.Linear(300,300).cuda()
     
     def forward(self,x):
-        x = self.linear1(x)
+        x = self.linear1(x).cuda()
         return x
 
 
 
 
-discriminator = Discriminator()
-mapper = Mapper()
-criterion1 = nn.BCELoss()
+discriminator = Discriminator().cuda()
+mapper = Mapper().cuda()
+criterion1 = nn.BCELoss().cuda()
 optimizer1 = optim.SGD(discriminator.parameters(), lr=0.1)
-criterion2 = nn.BCELoss()
+criterion2 = nn.BCELoss().cuda()
 optimizer2 = optim.SGD(mapper.parameters(), lr=0.1)
 
 
@@ -137,10 +137,10 @@ def top_words(emb1, emb2):
         ranked_scores.append(best_scores.cpu())
         ranked_targets.append(best_targets.cpu())
 
-    ranked_scores = torch.cat(ranked_scores, 0)
-    ranked_targets = torch.cat(ranked_targets, 0)
+    ranked_scores = torch.cat(ranked_scores, 0).cuda()
+    ranked_targets = torch.cat(ranked_targets, 0).cuda()
 
-    ranked_pairs = torch.cat([torch.arange(0, ranked_targets.size(0)).long().unsqueeze(1),ranked_targets[:, 0].unsqueeze(1)], 1)
+    ranked_pairs = torch.cat([torch.arange(0, ranked_targets.size(0)).long().unsqueeze(1),ranked_targets[:, 0].unsqueeze(1)], 1).cuda()
 
     #Reordering them
     diff = ranked_scores[:, 0] - ranked_scores[:, 1]
@@ -165,32 +165,34 @@ def proxy_construct_dictionary(src_emb_map_validation,target_emb_map_validation,
     final_pairs = src_to_target_dictionary.intersection(target_to_src_dictionary)
     if len(final_pairs) == 0:
         return None
-    dictionary = torch.Tensor(list([[a, b] for (a, b) in final_pairs])).long()
+    dictionary = torch.Tensor(list([[a, b] for (a, b) in final_pairs])).long().cuda()
     return dictionary
 
 
 
 
 validation_tracker = 0
-for epoch in range(10): #5 Epochs 
-    for iteration in range(30000):
+for epoch in range(10): #10 Epochs 
+    for iteration in range(3000):
+        if iteration % 10 == 0 :
+            print("epoch = %d, iteration = %d"%(epoch,iteration))
         # discriminator trained 3 times for every mapping training
         for i in range(3):
             discriminator.train()
             #Set gradient to zero before computation at every step
             optimizer1.zero_grad()
             src_lang_word_id = torch.Tensor(32).random_(50000).long()
-            src_lang_word_emb = src_embedding_learnable(src_lang_word_id)
+            src_lang_word_emb = src_embedding_learnable(src_lang_word_id).cuda()
             target_lang_word_id = torch.Tensor(32).random_(50000).long()
-            target_lang_word_emb = target_embedding_learnable(target_lang_word_id)
-            src_mult_mapper = mapper(src_lang_word_emb)
-            input_tensor = torch.cat([src_mult_mapper,target_lang_word_emb],0)
-            output_tensor = torch.Tensor(64).zero_().float()
+            target_lang_word_emb = target_embedding_learnable(target_lang_word_id).cuda()
+            src_mult_mapper = mapper(src_lang_word_emb).cuda()
+            input_tensor = torch.cat([src_mult_mapper,target_lang_word_emb],0).cuda()
+            output_tensor = torch.Tensor(64).zero_().float().cuda()
             output_tensor[:32] = 1 -0.2 #Smoothing
             output_tensor[32:] = 0.2
-            prediction = discriminator(input_tensor)
+            prediction = discriminator(input_tensor).cuda()
             #Compute loss and propogate backward
-            loss = criterion1(prediction,output_tensor)
+            loss = criterion1(prediction,output_tensor).cuda()
             loss.backward()
             optimizer1.step()
 
@@ -199,16 +201,16 @@ for epoch in range(10): #5 Epochs
         #Set gradient to zero before computation at every step
         optimizer2.zero_grad()
         src_lang_word_id = torch.Tensor(32).random_(50000).long()
-        src_lang_word_emb = src_embedding_learnable(src_lang_word_id)
+        src_lang_word_emb = src_embedding_learnable(src_lang_word_id).cuda()
         target_lang_word_id = torch.Tensor(32).random_(50000).long()
-        target_lang_word_emb = target_embedding_learnable(target_lang_word_id)
+        target_lang_word_emb = target_embedding_learnable(target_lang_word_id).cuda()
         src_mult_mapper = mapper(src_lang_word_emb)
-        input_tensor = torch.cat([src_mult_mapper,target_lang_word_emb],0)
-        output_tensor = torch.Tensor(64).zero_().float()
+        input_tensor = torch.cat([src_mult_mapper,target_lang_word_emb],0).cuda()
+        output_tensor = torch.Tensor(64).zero_().float().cuda()
         output_tensor[:32] = 1 -0.2 #Smoothing
         output_tensor[32:] = 0.2
-        prediction = discriminator(input_tensor)
-        loss = criterion2(prediction,1-output_tensor)
+        prediction = discriminator(input_tensor).cuda()
+        loss = criterion2(prediction,1-output_tensor).cuda()
         loss.backward()
         optimizer2.step()
         mapping_tensor = mapper.linear1.weight.data
@@ -216,7 +218,7 @@ for epoch in range(10): #5 Epochs
 
         
     #Validation through proxy parralel dictionary construction (both directions) and CSLS
-    src_emb_map_validation = mapper(src_embedding_learnable.weight)
+    src_emb_map_validation = mapper(src_embedding_learnable.weight).cuda()
     target_emb_map_validation = target_embedding_learnable.weight
     src_to_target_dictionary = top_words(src_emb_map_validation,target_emb_map_validation)
     target_to_src_dictionary = top_words(target_emb_map_validation,src_emb_map_validation)
