@@ -53,14 +53,14 @@ def load_pretrained_embeddings(filepath):
     return word_to_id_lang,id_to_word_lang,embeddings
 
 
-
-src_word_to_id,src_id_to_word,src_embeddings = load_pretrained_embeddings(source_text_file)
-target_word_to_id,target_id_to_word,target_embeddings = load_pretrained_embeddings(target_text_file)
 src_embedding_learnable = nn.Embedding(len(src_word_to_id),dimension).cuda()
 src_embedding_learnable.weight = nn.Parameter(torch.from_numpy(src_embeddings).float())
+src_embeddings_norm = src_embedding_learnable.weight/src_embedding_learnable.weight.norm(2, 1, keepdim=True).expand_as(src_embedding_learnable.weight)
+src_embedding_learnable.weight.data.copy_(src_embeddings_norm)
 target_embedding_learnable = nn.Embedding(len(target_word_to_id),dimension).cuda()
 target_embedding_learnable.weight = nn.Parameter(torch.from_numpy(target_embeddings).float())
-
+target_embeddings_norm = target_embedding_learnable.weight/target_embedding_learnable.weight.norm(2, 1, keepdim=True).expand_as(target_embedding_learnable.weight)
+target_embedding_learnable.weight.data.copy_(target_embeddings_norm)
 
 
 class Discriminator(nn.Module):
@@ -128,7 +128,7 @@ def top_words(emb1, emb2):
     average_dist_target = average_dist_target.type_as(emb2)
 
     for i in range(0, num, size):
-        scores = emb2.mm(emb1[i:min(num, i + size)].transpose(0, 1)).transpose(0, 1)
+        scores = emb2.mm(emb1[i:min(num, i + size)].t()).t()
         scores.mul_(2)
         scores.sub_(average_dist_src[i:min(num, i + size)][:, None] + average_dist_target[None, :])
         best_scores, best_targets = scores.topk(2, dim=1, largest=True, sorted=True)
@@ -137,10 +137,10 @@ def top_words(emb1, emb2):
         ranked_scores.append(best_scores.cpu())
         ranked_targets.append(best_targets.cpu())
 
-    ranked_scores = torch.cat(ranked_scores, 0).cuda()
-    ranked_targets = torch.cat(ranked_targets, 0).cuda()
+    ranked_scores = torch.cat(ranked_scores, 0)
+    ranked_targets = torch.cat(ranked_targets, 0)
 
-    ranked_pairs = torch.cat([torch.arange(0, ranked_targets.size(0)).long().unsqueeze(1),ranked_targets[:, 0].unsqueeze(1)], 1).cuda()
+    ranked_pairs = torch.cat([torch.arange(0, ranked_targets.size(0)).long().unsqueeze(1),ranked_targets[:, 0].unsqueeze(1)], 1)
 
     #Reordering them
     diff = ranked_scores[:, 0] - ranked_scores[:, 1]
@@ -220,6 +220,8 @@ for epoch in range(10): #10 Epochs
     #Validation through proxy parralel dictionary construction (both directions) and CSLS
     src_emb_map_validation = mapper(src_embedding_learnable.weight.cuda()).cuda()
     target_emb_map_validation = target_embedding_learnable.weight.cuda()
+    src_emb_map_validation = src_emb_map_validation/src_emb_map_validation.norm(2, 1, keepdim=True).expand_as(src_emb_map_validation)
+    target_emb_map_validation = target_emb_map_validation/target_emb_map_validation.norm(2, 1, keepdim=True).expand_as(target_emb_map_validation)
     src_to_target_dictionary = top_words(src_emb_map_validation,target_emb_map_validation)
     target_to_src_dictionary = top_words(target_emb_map_validation,src_emb_map_validation)
     dictionary = proxy_construct_dictionary(src_emb_map_validation,target_emb_map_validation,src_to_target_dictionary,target_to_src_dictionary)
