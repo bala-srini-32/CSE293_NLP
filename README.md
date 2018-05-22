@@ -1,5 +1,7 @@
 # Word Translation Without Parallel Data and Improvements
 
+## Please use Python 3 for running
+
 
 Word Translation Without Parallel Data [https://arxiv.org/pdf/1710.04087.pdf]
 
