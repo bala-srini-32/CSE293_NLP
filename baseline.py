@@ -172,8 +172,8 @@ def proxy_construct_dictionary(src_emb_map_validation,target_emb_map_validation,
 
 
 validation_tracker = 0
-for epoch in range(10): #10 Epochs 
-    for iteration in range(3000):
+for epoch in range(3): #3 Epochs 
+    for iteration in range(30000):
         if iteration % 10 == 0 :
             print("epoch = %d, iteration = %d"%(epoch,iteration))
         # discriminator trained 3 times for every mapping training
