@@ -255,9 +255,9 @@ mapper.linear1.weight.copy_(torch.mm(u,v).float())
 
 #Checking the value of validation metric again
 #Validation through proxy parralel dictionary construction (both directions) and CSLS
-src_emb_map_validation = mapper(src_embedding_learnable.weight)
+src_emb_map_validation = mapper(src_embedding_learnable.weight.cuda())
 target_emb_map_validation = target_embedding_learnable.weight
-src_to_target_dictionary = top_words(src_emb_map_validation,target_emb_map_validation)
+src_to_target_dictionary = top_words(src_emb_map_validation.cuda(),target_emb_map_validation.cuda())
 target_to_src_dictionary = top_words(target_emb_map_validation,src_emb_map_validation)
 dictionary = proxy_construct_dictionary(src_emb_map_validation,target_emb_map_validation,src_to_target_dictionary,target_to_src_dictionary)
 if dictionary is None:
