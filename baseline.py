@@ -266,3 +266,62 @@ else:
     mean_cosine = (src_emb_map_validation[dictionary[:, 0]] * target_emb_map_validation[dictionary[:, 1]]).sum(1).mean()
 print (mean_cosine)
 
+
+data_directory = "data/crosslingual/dictionaries/"
+source_lang = source_text_file.split(".")[-2]
+target_lang = target_text_file.split(".")[-2]
+
+def load_dictionary(path, word2id1, word2id2):
+    assert os.path.isfile(path)
+    pairs = []
+    not_found = 0
+    not_found1 = 0
+    not_found2 = 0
+    with io.open(path, 'r', encoding='utf-8') as f:
+        for _, line in enumerate(f):
+            assert line == line.lower()
+            word1, word2 = line.rstrip().split()
+            if word1 in word2id1 and word2 in word2id2:
+                pairs.append((word1, word2))
+            else:
+                not_found += 1
+                not_found1 += int(word1 not in word2id1)
+                not_found2 += int(word2 not in word2id2)
+
+    # sort the dictionary by source word frequencies
+    pairs = sorted(pairs, key=lambda x: word2id1[x[0]])
+    dico = torch.LongTensor(len(pairs), 2)
+    for i, (word1, word2) in enumerate(pairs):
+        dico[i, 0] = word2id1[word1]
+        dico[i, 1] = word2id2[word2]
+    return dico
+
+print("Task1 : Word Translation")
+path = os.path.join(data_directory, '%s-%s.5000-6500.txt' % (source_lang, target_lang))
+dico = load_dictionary(path, src_word_to_id, target_word_to_id)
+dico = dico.cuda()
+emb1 = mapper(src_embedding_learnable.weight.cuda())
+emb2 = target_embedding_learnable.weight.cuda()
+emb1 = emb1 / emb1.norm(2, 1, keepdim=True).expand_as(emb1)
+emb2 = emb2 / emb2.norm(2, 1, keepdim=True).expand_as(emb2)
+average_dist1 = avg_10_distance(emb2, emb1)
+average_dist2 = avg_10_distance(emb1, emb2)
+average_dist1 = average_dist1.type_as(emb1)
+average_dist2 = average_dist2.type_as(emb2)
+query = emb1[dico[:, 0]]
+scores = query.mm(emb2.transpose(0, 1))
+scores.mul_(2)
+scores.sub_(average_dist1[dico[:, 0]][:, None] + average_dist2[None, :])
+results = []
+top_matches = scores.topk(10, 1, True)[1]
+for k in [1, 5, 10]:
+    top_k_matches = top_matches[:, :k]
+    _matching = (top_k_matches == dico[:, 1][:, None].expand_as(top_k_matches)).sum(1)
+    # allow for multiple possible translations
+    matching = {}
+    for i, src_id in enumerate(dico[:, 0]):
+        matching[src_id] = min(matching.get(src_id, 0) + _matching[i], 1)
+    # evaluate precision@k
+    precision_at_k = 100 * np.mean(list(matching.values()))
+    results.append(('precision_at_%i' % k, precision_at_k))
+print(results)
