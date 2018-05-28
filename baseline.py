@@ -7,6 +7,7 @@ import io
 import numpy as np
 import argparse
 import os
+from scipy.stats import spearmanr
 
 parser = argparse.ArgumentParser(description='Word Translation Without Parallel Data')
 parser.add_argument("-s","--src", type=str, required=True, help="Source embeddings vec file")
@@ -325,3 +326,87 @@ for k in [1, 5, 10]:
     precision_at_k = 100 * np.mean(list(matching.values()))
     results.append(('precision_at_%i' % k, precision_at_k))
 print(results)
+
+
+data_directory = "data/crosslingual/wordsim/"
+source_lang = source_text_file.split(".")[-2]
+target_lang = target_text_file.split(".")[-2]
+
+def get_word_pairs(path, lower=True):
+    assert os.path.isfile(path) and type(lower) is bool
+    word_pairs = []
+    with io.open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.rstrip()
+            line = line.lower() if lower else line
+            line = line.split()
+            # ignore phrases, only consider words
+            if len(line) != 3:
+                assert len(line) > 3
+                assert 'SEMEVAL17' in os.path.basename(path) or 'EN-IT_MWS353' in path
+                continue
+            word_pairs.append((line[0], line[1], float(line[2])))
+    return word_pairs
+
+
+def get_word_id(word, word2id, lower):
+    assert type(lower) is bool
+    word_id = word2id.get(word)
+    if word_id is None and not lower:
+        word_id = word2id.get(word.capitalize())
+    if word_id is None and not lower:
+        word_id = word2id.get(word.title())
+    return word_id
+
+
+def get_spearman_rho(word2id1, embeddings1, path, lower,word2id2=None, embeddings2=None):
+    assert not ((word2id2 is None) ^ (embeddings2 is None))
+    word2id2 = word2id1 if word2id2 is None else word2id2
+    embeddings2 = embeddings1 if embeddings2 is None else embeddings2
+    assert len(word2id1) == embeddings1.shape[0]
+    assert len(word2id2) == embeddings2.shape[0]
+    assert type(lower) is bool
+    word_pairs = get_word_pairs(path)
+    not_found = 0
+    pred = []
+    gold = []
+    for word1, word2, similarity in word_pairs:
+        id1 = get_word_id(word1, word2id1, lower)
+        id2 = get_word_id(word2, word2id2, lower)
+        if id1 is None or id2 is None:
+            not_found += 1
+            continue
+        u = embeddings1[id1]
+        v = embeddings2[id2]
+        score = u.dot(v) / (np.linalg.norm(u) * np.linalg.norm(v))
+        gold.append(similarity)
+        pred.append(score)
+    return spearmanr(gold, pred).correlation, len(gold), not_found
+
+#Cross Lingual Word Similarity
+def get_crosslingual_wordsim_scores(lang1, word2id1, embeddings1,lang2, word2id2, embeddings2, lower=True):
+    f1 = os.path.join(data_directory, '%s-%s-SEMEVAL17.txt' % (lang1, lang2))
+    f2 = os.path.join(data_directory, '%s-%s-SEMEVAL17.txt' % (lang2, lang1))
+    if not (os.path.exists(f1) or os.path.exists(f2)):
+        return None
+    if os.path.exists(f1):
+        coeff, found, not_found = get_spearman_rho(word2id1, embeddings1, f1,lower, word2id2, embeddings2)
+    elif os.path.exists(f2):
+        coeff, found, not_found = get_spearman_rho(word2id2, embeddings2, f2,lower, word2id1, embeddings1)
+    scores = {}
+    separator = "=" * (30 + 1 + 10 + 1 + 13 + 1 + 12)
+    pattern = "%30s %10s %13s %12s"
+    task_name = '%s_%s_SEMEVAL17' % (lang1.upper(), lang2.upper())
+    scores[task_name] = coeff
+    if not scores:
+        return None
+    return scores
+
+print("Task2: Cross Lingual Word Similarity")
+emb1 = mapper(src_embedding_learnable.weight.cuda()).detach().cpu().numpy()
+emb2 = target_embedding_learnable.weight.detach().numpy()
+scores = get_crosslingual_wordsim_scores(source_lang, src_word_to_id, emb1,target_lang,target_word_to_id,emb2,)
+if scores is None:
+    print("Empty")
+scores = np.mean(list(scores.values()))
+print(scores)
