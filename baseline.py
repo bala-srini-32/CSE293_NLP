@@ -111,7 +111,7 @@ def avg_10_distance(emb2,emb1):
         best_distances, _ = distances.topk(10, dim=1, largest=True, sorted=True)
         all_distances.append(best_distances.mean(1).cpu())
     all_distances = torch.cat(all_distances)
-    return all_distances.numpy()
+    return all_distances
 
 
 
@@ -125,8 +125,8 @@ def top_words(emb1, emb2):
     num = 2000
 
     # average distances to 10 nearest neighbors
-    average_dist_src = torch.from_numpy(avg_10_distance(emb2, emb1))
-    average_dist_target = torch.from_numpy(avg_10_distance(emb2, emb1))
+    average_dist_src = avg_10_distance(emb2, emb1)
+    average_dist_target = avg_10_distance(emb2, emb1)
     average_dist_src = average_dist_src.type_as(emb1)
     average_dist_target = average_dist_target.type_as(emb2)
 
